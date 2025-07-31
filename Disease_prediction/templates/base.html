@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% block title %}Disease Prediction Chatbot{% endblock %}</title>
+
+  <style>
+    /* Reset and basics */
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    body {
+      background-color: whitesmoke; color: #2a2a2a; line-height: 1.6;
+      min-height: 100vh; display: flex; flex-direction: column;
+    }
+
+    /* Navbar */
+    .site-header { background-color: lightgreen; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    .navbar {
+      max-width: 1100px; margin: 0 auto; padding: 1rem 1.5rem;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .logo { font-weight: bold; font-size: 1.5rem; color: #fff; text-decoration: none; }
+    .nav-links { list-style: none; display: flex; gap: 1.5rem; }
+    .nav-links li a {
+      color: #fff; text-decoration: none; font-weight: 600; transition: color 0.3s ease;
+    }
+    .nav-links li a:hover, .nav-links li a:focus { color: #004d00; outline: none; }
+
+    /* Main content */
+    main { flex-grow: 1; max-width: 1100px; margin: 2rem auto; padding: 0 1.5rem; }
+
+    /* Flash messages */
+    .flash-stack { margin-bottom: 1rem; }
+    .flash {
+      padding: .6rem .8rem; border-radius: 6px; margin: .4rem 0;
+      background: #eef7ee; color: #004d00; border: 1px solid #cfe8cf;
+    }
+    .flash.danger { background: #fdeaea; color: #8c0000; border-color: #f3c0c0; }
+    .flash.success { background: #eafaf0; color: #0a6b2a; border-color: #bfe5cb; }
+    .flash.info { background: #eaf3ff; color: #0b4f8a; border-color: #c8dcf5; }
+
+    /* Buttons */
+    .btn-primary {
+      background-color: lightgreen; border: none; padding: 0.7rem 1.4rem;
+      border-radius: 4px; color: white; font-weight: 600; cursor: pointer;
+      transition: background-color 0.3s ease;
+    }
+    .btn-primary:hover, .btn-primary:focus { background-color: #004d00; outline: none; }
+
+    /* Auth forms */
+    .auth-section {
+      background: white; padding: 2rem; border-radius: 8px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1); max-width: 400px; margin: 0 auto;
+    }
+    .auth-section h2 { margin-bottom: 1rem; color: #004d00; }
+    .form-group { margin-bottom: 1rem; }
+    .form-group label { display: block; margin-bottom: 0.3rem; font-weight: 600; }
+    .form-control { width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; }
+    .errors { margin-top: 0.3rem; color: #b30000; font-size: 0.9rem; list-style: disc; padding-left: 1.2rem; }
+    .auth-footer-text { margin-top: 1rem; font-size: 0.9rem; }
+    .auth-footer-text a { color: lightgreen; text-decoration: none; font-weight: 600; }
+    .auth-footer-text a:hover, .auth-footer-text a:focus { text-decoration: underline; outline: none; }
+
+    /* Footer */
+    .site-footer { background-color: lightgreen; color: white; padding: 1rem 1.5rem; text-align: center; margin-top: auto; }
+  </style>
+
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+  <header class="site-header">
+    <nav class="navbar">
+      <a href="{{ url_for('home') }}" class="logo">Disease Predictor</a>
+      <ul class="nav-links">
+        <li><a href="{{ url_for('home') }}">Home</a></li>
+        <li><a href="{{ url_for('signup') }}">Sign Up</a></li>
+        <li><a href="{{ url_for('login') }}">Login</a></li>
+        <li><a href="{{ url_for('about') }}">About Us</a></li>
+        <li><a href="{{ url_for('contact') }}">Contact Us</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main>
+    {# global flash area #}
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="flash-stack">
+          {% for category, message in messages %}
+            <div class="flash {{ category }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </main>
+
+  {% include 'footer.html' %}
+
+  <script>
+    // Example JS: focus outline for nav links
+    document.querySelectorAll('.nav-links a').forEach(link => {
+      link.addEventListener('focus', e => e.target.style.outline = '2px solid #004d00');
+      link.addEventListener('blur', e => e.target.style.outline = 'none');
+    });
+  </script>
+
+  {% block extra_js %}{% endblock %}
+</body>
+</html>

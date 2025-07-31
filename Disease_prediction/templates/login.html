@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Login — Disease Predictor{% endblock %}
+
+{% block content %}
+<section class="auth-section">
+  <h2>Login to Your Account</h2>
+
+  {# Flash messages (optional) #}
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <div style="margin-bottom: .8rem;">
+        {% for category, message in messages %}
+          <div class="flash {{ category }}" style="padding:.6rem;border-radius:6px;margin:.3rem 0;background:#eef7ee;color:#004d00;">
+            {{ message }}
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  <form method="POST" action="{{ url_for('login') }}" novalidate>
+    {{ form.hidden_tag() }}
+
+    <div class="form-group">
+      {{ form.username.label }}
+      {{ form.username(class="form-control", placeholder="Enter username") }}
+      {% for error in form.username.errors %}
+        <div class="errors">{{ error }}</div>
+      {% endfor %}
+    </div>
+
+    <div class="form-group">
+      {{ form.password.label }}
+      {{ form.password(class="form-control", placeholder="Enter password") }}
+      {% for error in form.password.errors %}
+        <div class="errors">{{ error }}</div>
+      {% endfor %}
+    </div>
+
+    {{ form.submit(class="btn-primary") }}
+  </form>
+
+  <p class="auth-footer-text" style="margin-top: .8rem;">
+    Don't have an account? <a href="{{ url_for('signup') }}">Sign up here</a>.
+  </p>
+</section>
+{% endblock %}

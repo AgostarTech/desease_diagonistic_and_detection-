@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Predict — Disease Predictor{% endblock %}
+
+{% block content %}
+<section class="auth-section">
+  <h2>Predict Disease</h2>
+  <form method="POST" action="{{ url_for('predict') }}">
+    <div class="form-group">
+      <label for="symptoms">Enter symptoms (comma separated)</label>
+      <input id="symptoms" name="symptoms" class="form-control" placeholder="fever, cough, fatigue">
+    </div>
+    <button type="submit" class="btn-primary">Predict</button>
+  </form>
+
+  {% if result is not none %}
+    <div style="margin-top:1rem;">
+      <strong>Prediction:</strong> {{ result }}
+    </div>
+  {% endif %}
+</section>
+{% endblock %}

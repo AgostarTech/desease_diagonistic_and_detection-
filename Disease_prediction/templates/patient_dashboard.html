@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}Patient Dashboard{% endblock %}
+{% block content %}
+<section class="hero">
+  <h2>Welcome, {{ username }}!</h2>
+  <a class="btn-primary" href="{{ url_for('logout') }}" style="margin-left:.6rem;">Logout</a>
+</section>
+{% endblock %}

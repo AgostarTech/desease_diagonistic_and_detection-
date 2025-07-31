@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block title %}Home — Disease Symptom Prediction Chatbot{% endblock %}
+
+{% block content %}
+<section class="hero">
+  <h2>Welcome to Disease Symptom Prediction Chatbot</h2>
+  <p>Enter your symptoms and get possible disease predictions instantly.</p>
+  <a href="{{ url_for('predict') }}" class="btn-primary">
+    Start Predicting <i class="fa-solid fa-stethoscope"></i>
+  </a>
+</section>
+
+<section class="features">
+  <article class="feature">
+    <i class="fa-solid fa-brain fa-3x"></i>
+    <h3>AI Powered</h3>
+    <p>Uses advanced machine learning models trained on medical datasets.</p>
+  </article>
+
+  <article class="feature">
+    <i class="fa-solid fa-shield-virus fa-3x"></i>
+    <h3>Reliable Predictions</h3>
+    <p>Provides probable diseases based on your symptom inputs.</p>
+  </article>
+
+  <article class="feature">
+    <i class="fa-solid fa-comments fa-3x"></i>
+    <h3>Interactive Chatbot</h3>
+    <p>Guides you through symptom input and explains results clearly.</p>
+  </article>
+</section>
+{% endblock %}

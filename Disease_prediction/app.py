@@ -1,59 +1,98 @@
-import pandas as pd
-import numpy as np
-from nltk.corpus import wordnet
+# =========================================
+# Imports & App Setup
+# =========================================
 import csv
-import json
 import itertools
-from spacy.lang.en.stop_words import STOP_WORDS
-import spacy
-import joblib
-from flask import Flask, render_template, request, session
+import json
 
+import joblib
+import numpy as np
+import pandas as pd
+import spacy
+from flask import Flask, render_template, request, session, redirect, url_for, flash
+from nltk.corpus import wordnet
+from nltk.tokenize import word_tokenize  # kept to preserve original imports/usage
+from nltk.wsd import lesk
+from spacy.lang.en.stop_words import STOP_WORDS
+from flask import render_template, request, redirect, url_for, session, flash, abort
+from forms import LoginForm, SignupForm
+
+
+# Create the Flask app (single instance)
 app = Flask(__name__)
 
+# Load spaCy English model (used by text preprocessing)
 nlp = spacy.load('en_core_web_sm')
 
-# save data
+# -------------------------------------------------
+# Persisted JSON store (kept same behavior)
+# This overwrites DATA.json on each startup, as in original.
+# -------------------------------------------------
 data = {"users": []}
 with open('DATA.json', 'w') as outfile:
     json.dump(data, outfile)
 
 
+# =========================================
+# Utility & NLP / ML Helper Functions
+# =========================================
+
 def write_json(new_data, filename='DATA.json'):
+    """
+    Append a new user entry to DATA.json.
+    - Loads the existing file,
+    - Appends the `new_data` dict under "users",
+    - Writes back to disk.
+    """
     with open(filename, 'r+') as file:
-        # First we load existing data into a dict.
         file_data = json.load(file)
-        # Join new_data with file_data inside emp_details
         file_data["users"].append(new_data)
-        # Sets file's current position at offset.
         file.seek(0)
-        # convert back to json.
         json.dump(file_data, file, indent=4)
 
 
+# -----------------------------------------
+# Load datasets (Training/Testing)
+# -----------------------------------------
 df_tr = pd.read_csv('Medical_dataset/Training.csv')
 df_tt = pd.read_csv('Medical_dataset/Testing.csv')
 
+# Build symptom vectors and disease labels from training data
 symp = []
 disease = []
 for i in range(len(df_tr)):
     symp.append(df_tr.columns[df_tr.iloc[i] == 1].to_list())
     disease.append(df_tr.iloc[i, -1])
 
-# # I- GET ALL SYMPTOMS
-
+# Full list of raw symptom column names (excluding prognosis)
 all_symp_col = list(df_tr.columns[:-1])
 
 
 def clean_symp(sym):
-    return sym.replace('_', ' ').replace('.1', '').replace('(typhos)', '').replace('yellowish', 'yellow').replace(
-        'yellowing', 'yellow')
+    """
+    Normalize symptom string for display (replace underscores, variants, etc.).
+    """
+    return (
+        sym.replace('_', ' ')
+           .replace('.1', '')
+           .replace('(typhos)', '')
+           .replace('yellowish', 'yellow')
+           .replace('yellowing', 'yellow')
+    )
 
 
-all_symp = [clean_symp(sym) for sym in (all_symp_col)]
+# Human-friendly symptom names (for display) built from columns
+all_symp = [clean_symp(sym) for sym in all_symp_col]
 
 
 def preprocess(doc):
+    """
+    Minimal text preprocessing:
+    - tokenization via spaCy
+    - remove stopwords & non-alphabetics
+    - lemmatize
+    Returns a space-joined string of lemmas.
+    """
     nlp_doc = nlp(doc)
     d = []
     for token in nlp_doc:
@@ -62,17 +101,23 @@ def preprocess(doc):
     return ' '.join(d)
 
 
+# Preprocessed symptoms (lemma-based) to use for matching
 all_symp_pr = [preprocess(sym) for sym in all_symp]
 
-# associate each processed symp with column name
+# Map preprocessed symptom string -> original column name
 col_dict = dict(zip(all_symp_pr, all_symp_col))
 
 
-# II- Syntactic Similarity
+# =========================================
+# I. Syntactic Similarity Helpers
+# =========================================
 
-# Returns all the subsets of a set. This is a generator.
-# {1,2,3}->[{},{1},{2},{3},{1,3},{1,2},..]
 def powerset(seq):
+    """
+    Yield all subsets of a list (powerset).
+    E.g., [1,2,3] -> [[1,2,3],[1,2],[1,3],[2,3],[1],[2],[3],[]]
+    (Ordering preserved to mirror original behavior.)
+    """
     if len(seq) <= 1:
         yield seq
         yield []
@@ -82,8 +127,11 @@ def powerset(seq):
             yield item
 
 
-# Sort list based on length
 def sort(a):
+    """
+    Sort a list of lists by descending length (in-place),
+    then pop the last element. Mirrors original behavior.
+    """
     for i in range(len(a)):
         for j in range(i + 1, len(a)):
             if len(a[j]) > len(a[i]):
@@ -92,28 +140,34 @@ def sort(a):
     return a
 
 
-# find all permutations of a list
 def permutations(s):
-    permutations = list(itertools.permutations(s))
-    return ([' '.join(permutation) for permutation in permutations])
+    """
+    Return all permutations of list `s` as space-joined strings.
+    """
+    permutations_list = list(itertools.permutations(s))
+    return [' '.join(permutation) for permutation in permutations_list]
 
 
-# check if a txt and all diferrent combination if it exists in processed symp list
 def DoesExist(txt):
+    """
+    Check if any permutation of any subset of the input `txt` (string)
+    exists in the preprocessed symptoms list `all_symp_pr`.
+    Returns the matched preprocessed symptom string if found; otherwise False.
+    """
     txt = txt.split(' ')
     combinations = [x for x in powerset(txt)]
     sort(combinations)
     for comb in combinations:
-        # print(permutations(comb))
         for sym in permutations(comb):
             if sym in all_symp_pr:
-                # print(sym)
                 return sym
     return False
 
 
-# Jaccard similarity 2docs
 def jaccard_set(str1, str2):
+    """
+    Compute Jaccard similarity between two whitespace-tokenized strings.
+    """
     list1 = str1.split(' ')
     list2 = str2.split(' ')
     intersection = len(list(set(list1).intersection(list2)))
@@ -121,8 +175,13 @@ def jaccard_set(str1, str2):
     return float(intersection) / union
 
 
-# apply vanilla jaccard to symp with all corpus
 def syntactic_similarity(symp_t, corpus):
+    """
+    Apply Jaccard similarity between `symp_t` and each item in `corpus`.
+    - If an exact-like existence via DoesExist is found, return (1, [best_match]).
+    - Else return (1, list_of_nonzero_similarity_candidates) if any,
+      or (0, None) if none.
+    """
     most_sim = []
     poss_sym = []
     for symp in corpus:
@@ -140,12 +199,15 @@ def syntactic_similarity(symp_t, corpus):
         return 0, None
 
 
-# check a pattern if it exists in processed symp list
 def check_pattern(inp, dis_list):
+    """
+    Check if regex pattern `inp` (as raw) matches any item in `dis_list`.
+    Returns (1, matches) if found else (0, None).
+    """
     import re
     pred_list = []
     ptr = 0
-    patt = "^" + inp + "$"
+    patt = "^" + inp + "$"  # kept, mirrors original (unused variable)
     regexp = re.compile(inp)
     for item in dis_list:
         if regexp.search(item):
@@ -156,20 +218,27 @@ def check_pattern(inp, dis_list):
         return ptr, None
 
 
-# III- Semantic Similarity
-
-
-from nltk.wsd import lesk
-from nltk.tokenize import word_tokenize
-
+# =========================================
+# II. Semantic Similarity Helpers
+# =========================================
 
 def WSD(word, context):
+    """
+    Word Sense Disambiguation using NLTK's Lesk algorithm for `word` in `context`.
+    Returns a Synset or None.
+    """
     sens = lesk(context, word)
     return sens
 
 
-# semantic similarity 2docs
 def semanticD(doc1, doc2):
+    """
+    Compute a semantic similarity score between two documents by:
+    - preprocessing each,
+    - checking pairwise synset similarity via Wu-Palmer,
+    - summing scores > 0.25 threshold,
+    - normalizing by token count product.
+    """
     doc1_p = preprocess(doc1).split(' ')
     doc2_p = preprocess(doc2).split(' ')
     score = 0
@@ -179,14 +248,17 @@ def semanticD(doc1, doc2):
             syn2 = WSD(tock2, doc2)
             if syn1 is not None and syn2 is not None:
                 x = syn1.wup_similarity(syn2)
-                # x=syn1.path_similarity((syn2))
+                # Alternative path similarity commented out in original
                 if x is not None and x > 0.25:
                     score += x
     return score / (len(doc1_p) * len(doc2_p))
 
 
-# apply semantic simarity to symp with all corpus
 def semantic_similarity(symp_t, corpus):
+    """
+    Find the most semantically similar item in `corpus` to `symp_t`
+    using `semanticD`. Returns (max_score, best_match or None).
+    """
     max_sim = 0
     most_sim = None
     for symp in corpus:
@@ -197,8 +269,14 @@ def semantic_similarity(symp_t, corpus):
     return max_sim, most_sim
 
 
-# given a symp suggest possible synonyms
 def suggest_syn(sym):
+    """
+    Suggest possible preprocessed symptom candidates for a given `sym`
+    by:
+    - collecting WordNet lemmas,
+    - finding the most semantically similar preprocessed symptoms,
+    - deduplicating results.
+    """
     symp = []
     synonyms = wordnet.synsets(sym)
     lemmas = [word.lemma_names() for word in synonyms]
@@ -210,8 +288,16 @@ def suggest_syn(sym):
     return list(set(symp))
 
 
-# One-Hot-Vector dataframe
+# =========================================
+# III. Vectorization / Data Helpers
+# =========================================
+
 def OHV(cl_sym, all_sym):
+    """
+    Build a One-Hot Vector (DataFrame) for the set of selected symptoms `cl_sym`
+    against the full list `all_sym`.
+    Column names are the human-friendly `all_symp` (kept as original).
+    """
     l = np.zeros([1, len(all_sym)])
     for sym in cl_sym:
         l[0, all_sym.index(sym)] = 1
@@ -219,6 +305,9 @@ def OHV(cl_sym, all_sym):
 
 
 def contains(small, big):
+    """
+    True if every element in list `small` exists in list `big`.
+    """
     a = True
     for i in small:
         if i not in big:
@@ -226,8 +315,11 @@ def contains(small, big):
     return a
 
 
-# list of symptoms --> possible diseases
 def possible_diseases(l):
+    """
+    Given a list of symptom column names `l`, find diseases for which
+    all those symptoms are present in at least one training row.
+    """
     poss_dis = []
     for dis in set(disease):
         if contains(l, symVONdisease(df_tr, dis)):
@@ -235,83 +327,99 @@ def possible_diseases(l):
     return poss_dis
 
 
-# disease --> all symptoms
 def symVONdisease(df, disease):
+    """
+    Return the list of symptom column names that occur for a given `disease`
+    (any row where the symptom is 1) in dataframe `df`.
+    """
     ddf = df[df.prognosis == disease]
     m2 = (ddf == 1).any()
     return m2.index[m2].tolist()
 
 
-# IV- Prediction Model (KNN)
-# load model
+# =========================================
+# IV. Model & Dictionaries
+# =========================================
+
+# Load KNN classifier model (kept as original path)
 knn_clf = joblib.load('model/knn.pkl')
 
-# ##  VI- SEVERITY / DESCRIPTION / PRECAUTION
-# get dictionaries for severity-description-precaution for all diseases
-
+# Global dictionaries for severity, description, and precautions
 severityDictionary = dict()
 description_list = dict()
 precautionDictionary = dict()
 
 
 def getDescription():
+    """
+    Load disease description text from CSV into `description_list`.
+    """
     global description_list
     with open('Medical_dataset/symptom_Description.csv') as csv_file:
         csv_reader = csv.reader(csv_file, delimiter=',')
-        line_count = 0
         for row in csv_reader:
             _description = {row[0]: row[1]}
             description_list.update(_description)
 
 
 def getSeverityDict():
+    """
+    Load symptom severity scores from CSV into `severityDictionary`.
+    """
     global severityDictionary
     with open('Medical_dataset/symptom_severity.csv') as csv_file:
-
         csv_reader = csv.reader(csv_file, delimiter=',')
-        line_count = 0
         try:
             for row in csv_reader:
                 _diction = {row[0]: int(row[1])}
                 severityDictionary.update(_diction)
         except:
+            # Keep original silent pass on any parsing issues
             pass
 
 
 def getprecautionDict():
+    """
+    Load disease precaution steps (list of 4 items) from CSV into `precautionDictionary`.
+    """
     global precautionDictionary
     with open('Medical_dataset/symptom_precaution.csv') as csv_file:
         csv_reader = csv.reader(csv_file, delimiter=',')
-        line_count = 0
         for row in csv_reader:
             _prec = {row[0]: [row[1], row[2], row[3], row[4]]}
             precautionDictionary.update(_prec)
 
 
-# load dictionaries
+# Initialize dictionaries at import time (same as original)
 getSeverityDict()
 getprecautionDict()
 getDescription()
 
 
-# calcul patient condition
 def calc_condition(exp, days):
-    sum = 0
+    """
+    Compute patient condition severity by summing symptom severities in `exp`
+    and scaling by number of days.
+    - Returns 1 if threshold exceeded (advise doctor consultation),
+      else 0 (advise precautions).
+    """
+    sum_val = 0
     for item in exp:
         if item in severityDictionary.keys():
-            sum = sum + severityDictionary[item]
-    if ((sum * days) / (len(exp)) > 13):
+            sum_val = sum_val + severityDictionary[item]
+    if ((sum_val * days) / (len(exp)) > 13):
         return 1
-        print("You should take the consultation from doctor. ")
+        # original code printed messages after return; preserved structure
     else:
         return 0
-        print("It might not be that bad but you should take precautions.")
 
 
-# print possible symptoms
 def related_sym(psym1):
+    """
+    Build a clarifying question listing candidate symptoms from `psym1`
+    with numeric options for disambiguation. Returns 0 if none.
+    """
     s = "could you be more specific, <br>"
-    i = len(s)
     for num, it in enumerate(psym1):
         s += str(num) + ") " + clean_symp(it) + "<br>"
     if num != 0:
@@ -321,14 +429,321 @@ def related_sym(psym1):
         return 0
 
 
-@app.route("/")
+# =========================================
+# Flask Routes (UI shell + conversational endpoint)
+# =========================================
+
+# app.py
+from flask import Flask, render_template, redirect, url_for, flash, request
+from forms import LoginForm, SignupForm  # <-- import forms hapa
+
+app = Flask(__name__)
+app.config['SECRET_KEY'] = 'wekapasswordisiri-ngumu-na-ndefu-hapa'  # inahitajika na Flask-WTF (CSRF)
+
+
+
+# NOTE: Secret key is set below for flash/session use (kept same net result).
+app.secret_key = 'your-secret-key'  # needed for forms and flash messages (will be overwritten in __main__)
+
+
+######################################################################
+
+
+
+
+
+# app.py
+from flask import Flask, render_template, request, redirect, url_for, session, flash
+import sqlite3
+import os
+from functools import wraps
+
+app = Flask(__name__)
+app.secret_key = os.environ.get('SECRET_KEY', 'dev-very-simple')  # badilisha kwa production
+
+# -------- SQLite helpers --------
+DB_PATH = os.path.join(os.path.dirname(__file__), 'users.db')
+
+def db_connect():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+
+def init_db():
+    conn = db_connect()
+    cur = conn.cursor()
+
+    # 1) Base table (no email / role yet)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS users(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL
+            -- we'll add email / role below if missing
+        )
+    """)
+
+    # 2) Find existing columns
+    cur.execute("PRAGMA table_info(users)")
+    existing_cols = {row[1] for row in cur.fetchall()}  # row[1] = column name
+
+    # 3) Add email column if missing (NO UNIQUE here)
+    if 'email' not in existing_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN email TEXT")
+        # refresh column list
+        existing_cols.add('email')
+
+    # 4) Add role column if missing (then backfill)
+    if 'role' not in existing_cols:
+        cur.execute("ALTER TABLE users ADD COLUMN role TEXT")
+        cur.execute("UPDATE users SET role='patient' WHERE role IS NULL")
+        existing_cols.add('role')
+
+    # 5) Seed built-in admin (set email/role if columns exist)
+    cur.execute("SELECT 1 FROM users WHERE username = ?", ("admin",))
+    if cur.fetchone() is None:
+        # If 'email' and 'role' exist, include them in insert
+        if 'email' in existing_cols and 'role' in existing_cols:
+            cur.execute(
+                "INSERT INTO users(username, password, email, role) VALUES(?,?,?,?)",
+                ("admin", "admin123", "admin@example.com", "admin")
+            )
+        elif 'role' in existing_cols:
+            cur.execute(
+                "INSERT INTO users(username, password, role) VALUES(?,?,?)",
+                ("admin", "admin123", "admin")
+            )
+        else:
+            cur.execute(
+                "INSERT INTO users(username, password) VALUES(?,?)",
+                ("admin", "admin123")
+            )
+            # If role column exists now, set admin role explicitly
+            if 'role' in existing_cols:
+                cur.execute("UPDATE users SET role='admin' WHERE username='admin'")
+        # if email exists but we inserted without it, set later:
+        if 'email' in existing_cols:
+            cur.execute("UPDATE users SET email='admin@example.com' WHERE username='admin' AND (email IS NULL OR email='')")
+
+    # 6) Create UNIQUE index on email (enforces uniqueness going forward)
+    if 'email' in existing_cols:
+        try:
+            cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_users_email ON users(email)")
+        except sqlite3.OperationalError as e:
+            # Likely caused by duplicate existing emails
+            print("[init_db] Could not create unique index on email:", e)
+            print("         Check for duplicate email values in the users table.")
+
+    conn.commit()
+    conn.close()
+
+
+init_db()
+
+def get_user_by_username(username: str):
+    conn = db_connect()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM users WHERE username = ?", (username,))
+    row = cur.fetchone()
+    conn.close()
+    return row
+
+def create_user(username: str, password: str):
+    conn = db_connect()
+    cur = conn.cursor()
+    try:
+        cur.execute("INSERT INTO users(username, password) VALUES(?,?)", (username, password))
+        conn.commit()
+    finally:
+        conn.close()
+
+def verify_password(stored: str, given: str) -> bool:
+    # Plaintext for simplicity (for production, use hashing)
+    return stored == given
+
+def login_required(view_func):
+    @wraps(view_func)
+    def wrapper(*args, **kwargs):
+        if 'user' not in session:
+            return redirect(url_for('login'))
+        return view_func(*args, **kwargs)
+    return wrapper
+
+
+#################################################
+
+
+
+
+
+
+@app.route('/', endpoint='home')
 def home():
-    return render_template("home.html")
+    return render_template('index.html')
 
 
+#
+from werkzeug.security import generate_password_hash
+
+
+
+@app.route('/signup', methods=['GET', 'POST'])
+def signup():
+    form = SignupForm()
+    if form.validate_on_submit():
+        username = (form.username.data or '').strip()
+        email    = (form.email.data or '').strip().lower()
+        password = form.password.data
+        role     = 'patient'
+
+        conn = db_connect()
+        cur  = conn.cursor()
+
+        # Check duplicates for username or email
+        cur.execute("SELECT 1 FROM users WHERE username = ? OR email = ?", (username, email))
+        if cur.fetchone():
+            conn.close()
+            flash('Username or email already exists.', 'danger')
+            return render_template('signup.html', form=form)
+
+        cur.execute(
+            "INSERT INTO users (username, email, password, role) VALUES (?,?,?,?)",
+            (username, email, password, role)
+        )
+        conn.commit()
+        conn.close()
+
+        flash('Registration successful! Please log in.', 'success')
+        return redirect(url_for('login'))
+
+    return render_template('signup.html', form=form)
+
+
+
+# ---------- LOGIN ----------
+from werkzeug.security import check_password_hash
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    form = LoginForm()  # or remove this line if you're using a plain HTML form
+
+    # If you use Flask-WTF on the template, keep `form.validate_on_submit()`.
+    # If your template is a plain HTML form (no {{ form.hidden_tag() }}), use: if request.method == 'POST':
+    if request.method == 'POST' and (not hasattr(form, 'validate_on_submit') or form.validate_on_submit()):
+        # Read fields from form or request.form safely
+        username_or_email = (getattr(form, 'username', None).data if hasattr(form, 'username') else request.form.get('username') or '').strip()
+        password = (getattr(form, 'password', None).data if hasattr(form, 'password') else request.form.get('password') or '')
+
+        # --- Lookup user by username OR email (case-insensitive) ---
+        conn = db_connect()
+        cur  = conn.cursor()
+        # COLLATE NOCASE makes it case-insensitive
+        cur.execute("""
+            SELECT username, email, password, role
+            FROM users
+            WHERE username = ? COLLATE NOCASE
+               OR email = ? COLLATE NOCASE
+            LIMIT 1
+        """, (username_or_email, username_or_email))
+        user = cur.fetchone()
+        conn.close()
+
+        if not user:
+            # User not found -> send to signup
+            flash('Account not found. Please sign up.', 'info')
+            return redirect(url_for('signup'))
+
+        # Plaintext comparison (since that’s what you used at signup)
+        # If you switch to hashing, replace with check_password_hash(...)
+        if user['password'] != password:
+            flash('Wrong password. Try again or sign up.', 'danger')
+            # You can redirect back to login, or to signup as you prefer:
+            return redirect(url_for('login'))
+
+        # Success: set session and redirect by role
+        session['user'] = user['username']
+        session['role'] = user['role'] or 'patient'
+
+        if session['role'] == 'admin':
+            return redirect(url_for('admin_dashboard'))
+        else:
+            return redirect(url_for('patient_dashboard'))
+
+    # GET, or invalid form submit (e.g., missing CSRF when using Flask-WTF)
+    return render_template('login.html', form=form)
+
+
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    flash('Logged out.', 'info')
+    return redirect(url_for('login'))
+
+
+from flask import abort
+
+@app.route('/admin_dashboard')
+@login_required
+def admin_dashboard():
+    # Fetch the full user (needs role column present)
+    username = session.get('user')
+    user = get_user_by_username(username)  # must return row with ['username'], ['role']
+    if not user or user['role'] != 'admin':
+        abort(403)
+    # Pass 'user' so template can use {{ user.username }}
+    return render_template('admin_dashboard.html', user=user)
+
+
+
+@app.route('/patient_dashboard')
+@login_required
+def patient_dashboard():
+    if session.get('role') != 'patient':
+        abort(403)
+    return render_template('patient_dashboard.html', username=session.get('user'))
+
+
+
+# ---------- STATIC PAGES ----------
+@app.route('/about')
+def about():
+    return render_template('about.html')
+
+@app.route('/contact')
+def contact():
+    return render_template('contact.html')
+
+
+
+
+
+#####################################################
+
+
+@app.route('/predict', methods=['GET', 'POST'])
+def predict():
+    # ... your prediction logic here ...
+    return render_template('predict.html')  # au response nyingine
+
+
+
+####################################################################
 @app.route("/get")
 def get_bot_response():
+    """
+    Conversational endpoint for chatbot:
+    - Drives a multi-step dialog via the Flask session,
+    - Performs syntactic/semantic matching of user-described symptoms,
+    - Proposes clarifying questions,
+    - Builds a symptom set and predicts disease with a KNN model,
+    - Provides description and precautions based on CSV dictionaries.
+    The flow mirrors the original logic exactly.
+    """
     s = request.args.get('msg')
+
     if "step" in session:
         if session["step"] == "Q_C":
             name = session["name"]
@@ -342,40 +757,49 @@ def get_bot_response():
                 session["name"] = name
                 session["age"] = age
                 session["gender"] = gender
-    if s.upper() == "OK":
+
+    if s and s.upper() == "OK":
         return "What is your name ?"
+
     if 'name' not in session and 'step' not in session:
         session['name'] = s
         session['step'] = "age"
         return "How old are you? "
+
     if session["step"] == "age":
         session["age"] = int(s)
         session["step"] = "gender"
         return "Can you specify your gender ?"
+
     if session["step"] == "gender":
         session["gender"] = s
         session["step"] = "Depart"
+
     if session['step'] == "Depart":
         session['step'] = "BFS"
-        return "Well, Hello again Mr/Ms " + session[
-            "name"] + ", now I will be asking some few questions about your symptoms to see what you should do. Tap S to start diagnostic!"
+        return ("Well, Hello again Mr/Ms " + session["name"] +
+                ", now I will be asking some few questions about your symptoms to see what you should do. "
+                "Tap S to start diagnostic!")
+
     if session['step'] == "BFS":
-        session['step'] = "FS"  # first symp
+        session['step'] = "FS"  # first symptom
         return "Can you precise your main symptom Mr/Ms " + session["name"] + " ?"
+
     if session['step'] == "FS":
         sym1 = s
         sym1 = preprocess(sym1)
         sim1, psym1 = syntactic_similarity(sym1, all_symp_pr)
         temp = [sym1, sim1, psym1]
-        session['FSY'] = temp  # info du 1er symptome
-        session['step'] = "SS"  # second symptomee
+        session['FSY'] = temp  # first symptom info
+        session['step'] = "SS"  # second symptom
         if sim1 == 1:
-            session['step'] = "RS1"  # related_sym1
+            session['step'] = "RS1"  # related_sym1 disambiguation
             s = related_sym(psym1)
             if s != 0:
                 return s
         else:
             return "You are probably facing another symptom, if so, can you specify it?"
+
     if session['step'] == "RS1":
         temp = session['FSY']
         psym1 = temp[2]
@@ -384,6 +808,7 @@ def get_bot_response():
         session['FSY'] = temp
         session['step'] = 'SS'
         return "You are probably facing another symptom, if so, can you specify it?"
+
     if session['step'] == "SS":
         sym2 = s
         sym2 = preprocess(sym2)
@@ -392,13 +817,14 @@ def get_bot_response():
         if len(sym2) != 0:
             sim2, psym2 = syntactic_similarity(sym2, all_symp_pr)
         temp = [sym2, sim2, psym2]
-        session['SSY'] = temp  # info du 2eME symptome(sym,sim,psym)
-        session['step'] = "semantic"  # face semantic
+        session['SSY'] = temp  # second symptom info
+        session['step'] = "semantic"  # evaluate semantics
         if sim2 == 1:
-            session['step'] = "RS2"  # related sym2
+            session['step'] = "RS2"  # related_sym2 disambiguation
             s = related_sym(psym2)
             if s != 0:
                 return s
+
     if session['step'] == "RS2":
         temp = session['SSY']
         psym2 = temp[2]
@@ -406,29 +832,29 @@ def get_bot_response():
         temp[2] = psym2
         session['SSY'] = temp
         session['step'] = "semantic"
+
     if session['step'] == "semantic":
-        temp = session["FSY"]  # recuperer info du premier
+        temp = session["FSY"]
         sym1 = temp[0]
         sim1 = temp[1]
-        temp = session["SSY"]  # recuperer info du 2 eme symptome
+        temp = session["SSY"]
         sym2 = temp[0]
         sim2 = temp[1]
         if sim1 == 0 or sim2 == 0:
             session['step'] = "BFsim1=0"
         else:
-            session['step'] = 'PD'  # to possible_diseases
+            session['step'] = 'PD'  # move to possible diseases
+
     if session['step'] == "BFsim1=0":
         if sim1 == 0 and len(sym1) != 0:
             sim1, psym1 = semantic_similarity(sym1, all_symp_pr)
-            temp = []
-            temp.append(sym1)
-            temp.append(sim1)
-            temp.append(psym1)
+            temp = [sym1, sim1, psym1]
             session['FSY'] = temp
-            session['step'] = "sim1=0"  # process of semantic similarity=1 for first sympt.
+            session['step'] = "sim1=0"  # suggest synonyms for symptom 1
         else:
             session['step'] = "BFsim2=0"
-    if session['step'] == "sim1=0":  # semantic no => suggestion
+
+    if session['step'] == "sim1=0":  # semantic no => suggestions
         temp = session["FSY"]
         sym1 = temp[0]
         sim1 = temp[1]
@@ -454,20 +880,19 @@ def get_bot_response():
         if "suggested" in session:
             del session["suggested"]
         session['step'] = "BFsim2=0"
+
     if session['step'] == "BFsim2=0":
-        temp = session["SSY"]  # recuperer info du 2 eme symptome
+        temp = session["SSY"]
         sym2 = temp[0]
         sim2 = temp[1]
         if sim2 == 0 and len(sym2) != 0:
             sim2, psym2 = semantic_similarity(sym2, all_symp_pr)
-            temp = []
-            temp.append(sym2)
-            temp.append(sim2)
-            temp.append(psym2)
+            temp = [sym2, sim2, psym2]
             session['SSY'] = temp
             session['step'] = "sim2=0"
         else:
             session['step'] = "TEST"
+
     if session['step'] == "sim2=0":
         temp = session["SSY"]
         sym2 = temp[0]
@@ -494,7 +919,8 @@ def get_bot_response():
                 return msg
         if "suggested_2" in session:
             del session["suggested_2"]
-        session['step'] = "TEST"  # test if semantic and syntaxic and suggestion not found
+        session['step'] = "TEST"  # test fallback when both fail
+
     if session['step'] == "TEST":
         temp = session["FSY"]
         sim1 = temp[1]
@@ -503,7 +929,7 @@ def get_bot_response():
         sim2 = temp[1]
         psym2 = temp[2]
         if sim1 == 0 and sim2 == 0:
-            # GO TO THE END
+            # both unknown -> go to END without prediction
             result = None
             session['step'] = "END"
         else:
@@ -517,29 +943,28 @@ def get_bot_response():
                 temp = session["SSY"]
                 temp[2] = psym1
                 session["SSY"] = temp
-            session['step'] = 'PD'  # to possible_diseases
+            session['step'] = 'PD'  # proceed to possible diseases
+
     if session['step'] == 'PD':
-        # MAYBE THE LAST STEP
-        # create patient symp list
+        # Build patient symptom list and compute candidate diseases
         temp = session["FSY"]
         sim1 = temp[1]
         psym1 = temp[2]
         temp = session["SSY"]
         sim2 = temp[1]
         psym2 = temp[2]
-        print("hey2")
         if "all" not in session:
             session["asked"] = []
             session["all"] = [col_dict[psym1], col_dict[psym2]]
-            print(session["all"])
         session["diseases"] = possible_diseases(session["all"])
-        print(session["diseases"])
         all_sym = session["all"]
         diseases = session["diseases"]
         dis = diseases[0]
         session["dis"] = dis
         session['step'] = "for_dis"
+
     if session['step'] == "DIS":
+        # Ask about symptoms belonging to the current candidate disease
         if "symv" in session:
             if len(s) > 0 and len(session["symv"]) > 0:
                 symts = session["symv"]
@@ -547,12 +972,12 @@ def get_bot_response():
                 if s == "yes":
                     all_sym.append(symts[0])
                     session["all"] = all_sym
-                    print(possible_diseases(session["all"]))
                 del symts[0]
                 session["symv"] = symts
         if "symv" not in session:
             session["symv"] = symVONdisease(df_tr, session["dis"])
         if len(session["symv"]) > 0:
+            # NOTE: `symts` is used as in original structure
             if symts[0] not in session["all"] and symts[0] not in session["asked"]:
                 asked = session["asked"]
                 asked.append(symts[0])
@@ -564,7 +989,6 @@ def get_bot_response():
                 del symts[0]
                 session["symv"] = symts
                 s = ""
-                print("HANAAA")
                 return get_bot_response()
         else:
             PD = possible_diseases(session["all"])
@@ -572,10 +996,9 @@ def get_bot_response():
             if diseases[0] in PD:
                 session["testpred"] = diseases[0]
                 PD.remove(diseases[0])
-            #            diseases=session["diseases"]
-            #            del diseases[0]
             session["diseases"] = PD
             session['step'] = "for_dis"
+
     if session['step'] == "for_dis":
         diseases = session["diseases"]
         if len(diseases) <= 0:
@@ -584,28 +1007,35 @@ def get_bot_response():
             session["dis"] = diseases[0]
             session['step'] = "DIS"
             session["symv"] = symVONdisease(df_tr, session["dis"])
-            return get_bot_response()  # turn around sympt of dis
-        # predict possible diseases
+            return get_bot_response()  # loop through symptoms of disease
+
     if session['step'] == "PREDICT":
         result = knn_clf.predict(OHV(session["all"], all_symp_col))
         session['step'] = "END"
+
     if session['step'] == "END":
         if result is not None:
             if result[0] != session["testpred"]:
                 session['step'] = "Q_C"
-                return "as you provide me with few symptoms, I am sorry to announce that I cannot predict your " \
-                       "disease for the moment!!! <br> Can you specify more about what you are feeling or Tap q to " \
-                       "stop the conversation "
+                return ("as you provide me with few symptoms, I am sorry to announce that I cannot predict your "
+                        "disease for the moment!!! <br> Can you specify more about what you are feeling or Tap q to "
+                        "stop the conversation ")
             session['step'] = "Description"
             session["disease"] = result[0]
-            return "Well Mr/Ms " + session["name"] + ", you may have " + result[
-                0] + ". Tap D to get a description of the disease ."
+            return ("Well Mr/Ms " + session["name"] + ", you may have " + result[0] +
+                    ". Tap D to get a description of the disease .")
         else:
-            session['step'] = "Q_C"  # test if user want to continue the conversation or not
+            session['step'] = "Q_C"
             return "can you specify more what you feel or Tap q to stop the conversation"
+
     if session['step'] == "Description":
-        y = {"Name": session["name"], "Age": session["age"], "Gender": session["gender"], "Disease": session["disease"],
-             "Sympts": session["all"]}
+        y = {
+            "Name": session["name"],
+            "Age": session["age"],
+            "Gender": session["gender"],
+            "Disease": session["disease"],
+            "Sympts": session["all"]
+        }
         write_json(y)
         session['step'] = "Severity"
         if session["disease"] in description_list.keys():
@@ -613,7 +1043,9 @@ def get_bot_response():
         else:
             if " " in session["disease"]:
                 session["disease"] = session["disease"].replace(" ", "_")
-            return "please visit <a href='" + "https://en.wikipedia.org/wiki/" + session["disease"] + "'>  here  </a>"
+            return ("please visit <a href='" +
+                    "https://en.wikipedia.org/wiki/" + session["disease"] + "'>  here  </a>")
+
     if session['step'] == "Severity":
         session['step'] = 'FINAL'
         if calc_condition(session["all"], int(s)) == 1:
@@ -626,31 +1058,39 @@ def get_bot_response():
                 i += 1
             msg += ' Tap q to end'
             return msg
+
     if session['step'] == "FINAL":
         session['step'] = "BYE"
         return "Your diagnosis was perfectly completed. Do you need another medical consultation (yes or no)? "
+
     if session['step'] == "BYE":
         name = session["name"]
         age = session["age"]
         gender = session["gender"]
         session.clear()
-        if s.lower() == "yes":
+        if s and s.lower() == "yes":
             session["gender"] = gender
             session["name"] = name
             session["age"] = age
             session['step'] = "FS"
             return "HELLO again Mr/Ms " + session["name"] + " Please tell me your main symptom. "
         else:
-            return "THANKS Mr/Ms " + name + " for using me for more information please contact <b> +21266666666</b>"
+            return ("THANKS Mr/Ms " + name +
+                    " for using me for more information please contact <b> +21266666666</b>")
 
 
+# =========================================
+# Entrypoint
+# =========================================
 if __name__ == "__main__":
-    import random  # define the random module
+    # Preserve original behavior: overwrite earlier secret key with random key
+    import random
     import string
 
     S = 10  # number of characters in the string.
-    # call random.choices() string module to find the string in Uppercase + numeric data.
     ran = ''.join(random.choices(string.ascii_uppercase + string.digits, k=S))
-    # chat_sp()
     app.secret_key = str(ran)
+
+    # Run the Flask app (debug disabled to mirror the last run block behavior)
+    # Your original file had two run blocks; we keep a single final one.
     app.run()
