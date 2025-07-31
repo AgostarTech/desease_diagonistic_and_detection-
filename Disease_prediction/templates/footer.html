@@ -1,5 +1,131 @@
 <footer class="site-footer">
-  <div class="container">
-    <p>&copy; 2025 Disease Symptom Prediction Chatbot. All rights reserved.</p>
+  <div class="footer-container">
+    <div class="footer-section" id="about-footer">
+      <h3>About Us</h3>
+      <p>We help users identify potential diseases using AI‑driven prediction tools to promote early awareness and informed decisions.</p>
+    </div>
+
+    <div class="footer-section" id="quick-links">
+      <h3>Quick Links</h3>
+      <ul>
+        <li><a href="{{ url_for('home') }}"> Home</a></li>
+        <li><a href="{{ url_for('about') }}">About</a></li>
+        <li><a href="{{ url_for('contact') }}"> Contact</a></li>
+        <li><a href="{{ url_for('predict') }}"> Predict Disease</a></li>
+      </ul>
+    </div>
+
+    <div class="footer-section" id="contact-footer">
+      <h3>Contact</h3>
+      <p>Email: <a href="mailto:support@diseasepredictor.example">support@diseasepredictor.example</a></p>
+      <p>📍 Dar es Salaam, Tanzania</p>
+    </div>
+  </div>
+
+  <div class="footer-bottom">
+    <p>&copy; 2025 <strong>Disease Symptom Prediction Chatbot</strong>. All rights reserved.</p>
   </div>
 </footer>
+
+<style>
+  .site-footer {
+    background: linear-gradient(135deg, lightgreen 50%, whitesmoke 50%);
+    color: #222;
+    padding: 50px 20px 30px;
+    font-family: 'Segoe UI', sans-serif;
+    position: relative;
+    z-index: 1;
+    overflow: hidden;
+  }
+
+  .footer-container {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-evenly;
+    gap: 30px;
+    margin-bottom: 30px;
+  }
+
+  .footer-section {
+    flex: 1 1 280px;
+    background-color: rgba(255, 255, 255, 0.85);
+    padding: 25px;
+    border-radius: 20px;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    animation: zoomIn 1s ease forwards;
+    opacity: 0;
+  }
+
+  .footer-section:hover {
+    transform: scale(1.05);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+  }
+
+  .footer-section h3 {
+    color: #006400;
+    margin-bottom: 15px;
+    font-size: 1.4rem;
+  }
+
+  .footer-section p,
+  .footer-section a,
+  .footer-section li {
+    color: #333;
+    font-size: 0.95rem;
+    text-decoration: none;
+    line-height: 1.6;
+  }
+
+  .footer-section ul {
+    list-style: none;
+    padding-left: 0;
+  }
+
+  .footer-section ul li {
+    margin-bottom: 8px;
+    transition: color 0.3s;
+  }
+
+  .footer-section ul li a:hover {
+    color: #008000;
+    font-weight: 500;
+  }
+
+  .footer-bottom {
+    text-align: center;
+    font-size: 0.85rem;
+    border-top: 1px solid rgba(0, 0, 0, 0.1);
+    padding-top: 15px;
+    color: #004d00;
+  }
+
+  /* Animations */
+  @keyframes zoomIn {
+    from { opacity: 0; transform: scale(0.8); }
+    to { opacity: 1; transform: scale(1); }
+  }
+
+  /* Responsive Design */
+  @media (max-width: 768px) {
+    .footer-container {
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .footer-section {
+      width: 100%;
+      margin-bottom: 20px;
+    }
+  }
+</style>
+
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    const sections = document.querySelectorAll('.footer-section');
+    sections.forEach((section, i) => {
+      setTimeout(() => {
+        section.style.opacity = "1";
+      }, 300 * i);
+    });
+  });
+</script>

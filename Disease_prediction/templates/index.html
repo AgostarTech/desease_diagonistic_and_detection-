@@ -3,6 +3,89 @@
 {% block title %}Home — Disease Symptom Prediction Chatbot{% endblock %}
 
 {% block content %}
+<style>
+  body {
+    font-family: 'Segoe UI', sans-serif;
+    background-color: whitesmoke;
+    color: #333;
+    margin: 0;
+    padding: 0;
+  }
+
+  .hero {
+    background-color: lightgreen;
+    text-align: center;
+    padding: 60px 20px;
+    border-radius: 10px;
+    margin: 20px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+  }
+
+  .hero h2 {
+    font-size: 2.5rem;
+    color: #004d00;
+    margin-bottom: 20px;
+  }
+
+  .hero p {
+    font-size: 1.2rem;
+    color: #333;
+    margin-bottom: 30px;
+  }
+
+  .btn-primary {
+    background-color: #004d00;
+    color: white;
+    padding: 12px 25px;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: bold;
+    font-size: 1rem;
+    transition: background-color 0.3s ease;
+  }
+
+  .btn-primary:hover {
+    background-color: #006600;
+  }
+
+  .features {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 30px;
+    margin: 40px auto;
+    max-width: 1100px;
+    padding: 0 20px;
+  }
+
+  .feature {
+    background: white;
+    border-radius: 10px;
+    padding: 25px;
+    text-align: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    transition: transform 0.3s ease;
+  }
+
+  .feature:hover {
+    transform: translateY(-5px);
+  }
+
+  .feature i {
+    color: #2e8b57;
+    margin-bottom: 15px;
+  }
+
+  .feature h3 {
+    margin-bottom: 10px;
+    color: #004d00;
+  }
+
+  .feature p {
+    color: #333;
+    font-size: 0.95rem;
+  }
+</style>
+
 <section class="hero">
   <h2>Welcome to Disease Symptom Prediction Chatbot</h2>
   <p>Enter your symptoms and get possible disease predictions instantly.</p>

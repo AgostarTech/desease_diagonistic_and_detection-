@@ -676,6 +676,14 @@ def login():
 
 
 
+@app.route('/trained_bot')
+@login_required
+def trained_bot():
+    return render_template('home.html', username=session.get('user'))
+
+
+
+
 @app.route('/logout')
 def logout():
     session.clear()
@@ -685,25 +693,190 @@ def logout():
 
 from flask import abort
 
+
 @app.route('/admin_dashboard')
 @login_required
 def admin_dashboard():
-    # Fetch the full user (needs role column present)
-    username = session.get('user')
-    user = get_user_by_username(username)  # must return row with ['username'], ['role']
-    if not user or user['role'] != 'admin':
+    if session.get('role') != 'admin':
         abort(403)
-    # Pass 'user' so template can use {{ user.username }}
-    return render_template('admin_dashboard.html', user=user)
+
+    conn = db_connect(); cur = conn.cursor()
+    cur.execute("SELECT username, email, role, id FROM users")
+    users = cur.fetchall()
+
+    cur.execute("SELECT COUNT(*) AS total_users FROM users")
+    total_users = cur.fetchone()['total_users']
+
+    cur.execute("SELECT COUNT(*) AS total_predictions FROM predictions")
+    total_preds = cur.fetchone()['total_predictions']
+
+    cur.execute("SELECT * FROM faq")  # assuming table: faq (id, question, answer)
+    faq = cur.fetchall()
+
+    cur.execute("SELECT * FROM users WHERE username=?", (session['user'],))
+    admin_user = cur.fetchone()
+
+    conn.close()
+
+    return render_template('admin_dashboard.html',
+                           user=admin_user,
+                           user_stats={'total_users': total_users, 'total_predictions': total_preds},
+                           users=users,
+                           faq=faq)
 
 
 
+@app.route('/admin/user/<username>')
+@login_required
+def view_user_profile(username):
+    if session.get('role') != 'admin':
+        abort(403)
+    conn = db_connect(); cur = conn.cursor()
+    cur.execute("SELECT * FROM users WHERE username=?", (username,))
+    user = cur.fetchone()
+    conn.close()
+    return render_template('view_user.html', user=user)
+
+
+@app.route('/admin/delete_user/<int:user_id>')
+@login_required
+def delete_user(user_id):
+    if session.get('role') != 'admin':
+        abort(403)
+    conn = db_connect(); cur = conn.cursor()
+    cur.execute("DELETE FROM users WHERE id=?", (user_id,))
+    conn.commit(); conn.close()
+    flash("User deleted successfully")
+    return redirect(url_for('admin_dashboard'))
+
+
+@app.route('/admin/update_profile', methods=['POST'])
+@login_required
+def update_admin_profile():
+    if session.get('role') != 'admin':
+        abort(403)
+    email = request.form.get('email')
+    password = request.form.get('password')
+    conn = db_connect(); cur = conn.cursor()
+    if password:
+        hashed = generate_password_hash(password)
+        cur.execute("UPDATE users SET email=?, password=? WHERE username=?",
+                    (email, hashed, session['user']))
+    else:
+        cur.execute("UPDATE users SET email=? WHERE username=?",
+                    (email, session['user']))
+    conn.commit(); conn.close()
+    flash("Profile updated")
+    return redirect(url_for('admin_dashboard'))
+
+
+
+@app.route('/admin/promote/<int:user_id>', methods=['POST'])
+@login_required
+def promote_user(user_id):
+    if session.get('role') != 'admin':
+        abort(403)
+
+    conn = db_connect(); cur = conn.cursor()
+    cur.execute("UPDATE users SET role='admin' WHERE id=?", (user_id,))
+    conn.commit(); conn.close()
+
+    flash("User promoted to admin.", "success")
+    return redirect(url_for('admin_dashboard'))
+
+
+
+# Patient dashboard view (populate stats, history, email)
 @app.route('/patient_dashboard')
 @login_required
 def patient_dashboard():
     if session.get('role') != 'patient':
         abort(403)
-    return render_template('patient_dashboard.html', username=session.get('user'))
+    username = session.get('user')
+    email = None
+    predictions = []
+    stats = dict(total_preds=0, last_pred_date=None)
+
+    conn = db_connect(); cur = conn.cursor()
+    try:
+        cur.execute("SELECT email FROM users WHERE username=?", (username,))
+        r = cur.fetchone()
+        if r: email = r['email']
+    except Exception: pass
+
+    try:
+        cur.execute("""
+          SELECT symptoms, predicted_disease, confidence, created_at
+          FROM predictions
+          WHERE user_id = (SELECT id FROM users WHERE username=?)
+          ORDER BY created_at DESC LIMIT 25
+        """, (username,))
+        predictions = cur.fetchall()
+        stats['total_preds'] = len(predictions)
+        stats['last_pred_date'] = predictions[0]['created_at'] if predictions else None
+    except Exception:
+        predictions = []
+    conn.close()
+
+    return render_template('patient_dashboard.html',
+                           username=username,
+                           email=email,
+                           predictions=predictions,
+                           stats=stats)
+
+# Update email
+@app.route('/patient/profile/update', methods=['POST'])
+
+
+@login_required
+def patient_update_profile():
+    if session.get('role') != 'patient':
+        abort(403)
+    email = (request.form.get('email') or '').strip().lower()
+    if not email:
+        flash('Email is required.', 'danger')
+        return redirect(url_for('patient_dashboard'))
+    conn = db_connect(); cur = conn.cursor()
+    try:
+        cur.execute("UPDATE users SET email=? WHERE username=?", (email, session.get('user')))
+        conn.commit()
+        flash('Email updated.', 'success')
+    except Exception:
+        flash('Could not update email.', 'danger')
+    finally:
+        conn.close()
+    return redirect(url_for('patient_dashboard'))
+
+# Change password (plaintext version — for dev only)
+@app.route('/patient/profile/password', methods=['POST'])
+@login_required
+def patient_change_password():
+    if session.get('role') != 'patient':
+        abort(403)
+    curr = request.form.get('current_password') or ''
+    newp = request.form.get('new_password') or ''
+    if not newp:
+        flash('New password required.', 'danger')
+        return redirect(url_for('patient_dashboard'))
+
+    conn = db_connect(); cur = conn.cursor()
+    cur.execute("SELECT password FROM users WHERE username=?", (session.get('user'),))
+    row = cur.fetchone()
+    if not row or row['password'] != curr:
+        conn.close()
+        flash('Current password incorrect.', 'danger')
+        return redirect(url_for('patient_dashboard'))
+
+    try:
+        cur = conn.cursor()
+        cur.execute("UPDATE users SET password=? WHERE username=?", (newp, session.get('user')))
+        conn.commit()
+        flash('Password changed.', 'success')
+    except Exception:
+        flash('Could not change password.', 'danger')
+    finally:
+        conn.close()
+    return redirect(url_for('patient_dashboard'))
 
 
 
@@ -718,6 +891,31 @@ def contact():
 
 
 
+@app.route('/update_profile', methods=['POST'])
+@login_required
+def update_profile():
+    if session.get('role') != 'patient':
+        abort(403)
+    
+    username = session.get('user')
+    email = request.form.get('email')
+    password = request.form.get('password')
+
+    conn = db_connect(); cur = conn.cursor()
+    try:
+        if password:
+            hashed = generate_password_hash(password)
+            cur.execute("UPDATE users SET email=?, password=? WHERE username=?", (email, hashed, username))
+        else:
+            cur.execute("UPDATE users SET email=? WHERE username=?", (email, username))
+        conn.commit()
+    except Exception as e:
+        flash("Error updating profile.")
+    finally:
+        conn.close()
+
+    return redirect(url_for('patient_dashboard'))
+
 
 
 #####################################################
@@ -725,9 +923,34 @@ def contact():
 
 @app.route('/predict', methods=['GET', 'POST'])
 def predict():
-    # ... your prediction logic here ...
-    return render_template('predict.html')  # au response nyingine
+    if request.method == 'POST':
+        # If JSON body:
+        if request.is_json:
+            data = request.get_json(silent=True) or {}
+            symptoms = (data.get('symptoms') or '').strip()
+        else:
+            symptoms = (request.form.get('symptoms') or '').strip()
 
+        # TODO: run your real model here
+        prediction = "Flu" if "fever" in symptoms.lower() else "Common Cold"
+        confidence = 92
+
+        # (optional) log to predictions table tied to current user
+        try:
+            if 'user' in session:
+                conn = db_connect(); cur = conn.cursor()
+                cur.execute("""
+                  INSERT INTO predictions(user_id, symptoms, predicted_disease, confidence, created_at)
+                  VALUES((SELECT id FROM users WHERE username=?), ?, ?, ?, datetime('now'))
+                """, (session.get('user'), symptoms, prediction, confidence))
+                conn.commit(); conn.close()
+        except Exception:
+            pass
+
+        return {"prediction": prediction, "confidence": confidence}
+
+    # GET -> render a plain page or redirect to dashboard/chatbot tab
+    return render_template('predict.html')
 
 
 ####################################################################

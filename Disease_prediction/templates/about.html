@@ -1,8 +1,108 @@
 {% extends "base.html" %}
 {% block title %}About Us — Disease Predictor{% endblock %}
+
 {% block content %}
+<style>
+  body {
+    font-family: 'Segoe UI', sans-serif;
+    background-color: whitesmoke;
+    color: #2f4f4f;
+    margin: 0;
+    padding: 0;
+  }
+
+  .hero {
+    background-color: lightgreen;
+    padding: 50px 20px;
+    text-align: center;
+    border-radius: 10px;
+    margin: 20px auto;
+    max-width: 900px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+  }
+
+  .hero h2 {
+    font-size: 2.5rem;
+    margin-bottom: 20px;
+    color: #004d00;
+  }
+
+  .hero p {
+    font-size: 1.2rem;
+    line-height: 1.6;
+    color: #333;
+  }
+
+  .team-section {
+    padding: 40px 20px;
+    text-align: center;
+    max-width: 1000px;
+    margin: auto;
+  }
+
+  .team-section h3 {
+    color: #2e8b57;
+    font-size: 2rem;
+    margin-bottom: 30px;
+  }
+
+  .team-grid {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 30px;
+  }
+
+  .member {
+    background: white;
+    border-radius: 10px;
+    padding: 20px;
+    width: 220px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+  }
+
+  .member h4 {
+    margin-top: 15px;
+    color: #006400;
+  }
+
+  .member p {
+    font-size: 0.95rem;
+    color: #444;
+  }
+
+  .member:hover {
+    transform: scale(1.05);
+    transition: transform 0.3s ease;
+  }
+</style>
+
 <section class="hero">
   <h2>About Us</h2>
-  <p>We built this AI‑powered chatbot to help users get quick, educational insights based on symptoms.</p>
+  <p>We built this AI-powered disease prediction system to assist users in identifying potential illnesses based on their symptoms. Our chatbot serves as a first step towards better awareness and guidance.</p>
 </section>
+
+<section class="team-section">
+  <h3>Meet the Team</h3>
+  <div class="team-grid">
+    <div class="member">
+      <h4>Ndoipo Ipanga</h4>
+      <p>Backend Developer</p>
+    </div>
+    <div class="member">
+      <h4>Ommary Ramadhan</h4>
+      <p>Frontend Designer</p>
+    </div>
+   
+  </div>
+</section>
+
+<script>
+  // Optional: Show an alert on hover for demo purposes
+  document.querySelectorAll('.member').forEach(member => {
+    member.addEventListener('mouseenter', () => {
+      console.log(`Viewing ${member.querySelector('h4').textContent}'s profile`);
+    });
+  });
+</script>
 {% endblock %}
